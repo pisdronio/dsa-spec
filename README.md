@@ -67,7 +67,9 @@ This specification is licensed under **Creative Commons Attribution-ShareAlike 4
 
 See [LICENSE](LICENSE) or https://creativecommons.org/licenses/by-sa/4.0/
 
-The reference implementation is licensed separately under **GPL v3**.
+**Implementing this specification does not require you to adopt GPL v3.** The specification itself is CC BY-SA 4.0 — you may write a proprietary implementation as long as you credit this specification and share any modifications to the spec itself under CC BY-SA 4.0.
+
+The reference implementation is licensed separately under **GPL v3** at [pisdronio/dsa](https://github.com/pisdronio/dsa). This is the same boundary used by open standards such as Opus (RFC 6716, IETF) and MPEG-4 SVC (ISO/IEC 14496), where the specification and implementation carry independent licenses.
 
 ---
 
