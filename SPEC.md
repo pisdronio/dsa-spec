@@ -531,6 +531,45 @@ Layer 2 pre-emphasis: `min(1.0, steepness × 1.15)`.
 
 Factor: 1.15×. Compensates for lens PSF blur at 15 cm focal distance under Digilog Rig LED illumination. Layer 0 and Layer 1 dots are large enough that PSF blur is negligible.
 
+### 11.5 Disc geometry — standard 12-inch disc
+
+```
+Disc diameter:           290 mm
+Outer audio ring radius: 141 mm
+Inner audio ring radius:  62 mm
+Audio zone width:         79 mm   (141 − 62)
+Ring width per band:       1.65 mm (79mm / 48 bands)
+Clock track:             141 mm – 143.5 mm (2.5 mm wide)
+Label area:              < 55 mm radius
+Spindle hole:            < 7 mm radius
+Reference markers:       8 dots on clock track, 45° spacing
+```
+
+### 11.6 Disc capacity limits
+
+The binding constraint is the **innermost audio ring** (band 0, L0 bass) at radius 62 mm. Its circumference (389 mm) is less than half the outer ring (886 mm), so it determines the maximum number of arc segments before individual arcs become too small to print or read.
+
+```
+Reader type                Min readable arc   Max frames   Max duration
+─────────────────────────────────────────────────────────────────────────
+Digilog Rig (standard)     0.3 mm             1298         ~30 s
+Phone camera               0.5 mm              779         ~18 s
+High-res inkjet + Rig      0.2 mm             1947         ~45 s
+```
+
+These values apply to a standard 290 mm disc at 44100 Hz sample rate (1024-sample hop).
+
+**Defined format constants:**
+
+```
+DISC_MAX_FRAMES_STANDARD = 1298   # Digilog Rig, 0.3mm min arc
+DISC_MAX_FRAMES_PHONE    =  779   # phone camera, 0.5mm min arc
+DISC_MAX_DURATION_STANDARD_S ≈ 30.1 s
+DISC_MAX_DURATION_PHONE_S    ≈ 18.1 s
+```
+
+A conforming disc encoder SHOULD warn when the input audio exceeds `DISC_MAX_FRAMES_STANDARD`. It MUST NOT silently produce a disc layout that exceeds the physical readability limits of the target reader type.
+
 ---
 
 ## 12. Conformance
