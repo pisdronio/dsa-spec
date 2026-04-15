@@ -18,3 +18,14 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Generated calibration artifacts (large / machine-specific)
+calib_disc.png
+calib_disc_legend.txt
+calib_measurements_template.csv
+calib_measurements_*.csv
+calibration_tables.json
+calibration_tables_report.txt
+demo_v4_disc.png
+v4_*.png
+band_energies.png

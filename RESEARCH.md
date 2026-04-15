@@ -1337,22 +1337,48 @@ The following questions can only be answered by physical experimentation with th
 
 ---
 
-### 13.9 Proposed experimental timeline
+### 13.9 Experimental timeline
 
-**Phase 1 — Calibration disc design and print** (weeks 1–2)
-Design the zone layout precisely. Print on the reference substrate at reference DPI. Verify print quality visually.
+**Phase 1 — Calibration disc design and print** ✓ SOFTWARE COMPLETE
+`calib_disc_gen.py` generates a 12" 300 DPI disc PNG with 57 rings across
+5 measurement zones (Zone 5 reference anchors → Zone 1 discriminability).
+Run `python3 calib_disc_gen.py` to produce `calib_disc.png`, `calib_disc_legend.txt`,
+and `calib_measurements_template.csv`. **Pending: physical print on reference substrate.**
 
-**Phase 2 — Static measurements** (week 3)
-Photograph stopped disc. Verify Zone 5 references match expected solid colors. Verify Zone 1 prints are correctly registered. Document dot gain for future compensation.
+**Phase 2 — Static measurements** ⏳ HARDWARE PENDING
+Photograph stopped disc. Run `python3 calib_extract.py photo.jpg --speed 0`.
+Verify Zone 5 anchor readings match expected solid colors. Document dot gain.
 
-**Phase 3 — Spin measurements at 33rpm and 45rpm** (weeks 3–4)
-Photograph at both nominal speeds. Extract ring RGB values. Build the initial calibration table. Identify which color pairs blend cleanly and which produce unexpected hues.
+**Phase 3 — Spin measurements at 33rpm and 45rpm** ⏳ HARDWARE PENDING
+Run `calib_extract.py` at each speed. Run `calib_build_tables.py meas_0rpm.csv meas_33rpm.csv meas_45rpm.csv` to produce `calibration_tables.json`. Identify which pairs blend cleanly.
 
-**Phase 4 — Edge case testing** (week 5)
-Test stroboscopic exclusion zones. Test at manually varied speeds (~10rpm, ~20rpm) to characterize the transition from discrete to integrated reading. Identify the minimum speed threshold for reliable encoding.
+**Phase 4 — Calibration table pipeline** ✓ SOFTWARE COMPLETE
+`calib_build_tables.py` ingests measurement CSVs and produces `calibration_tables.json`
+containing ratio curves, density thresholds, pair discriminability rankings, and
+piecewise-linear encoder LUTs. Drop a real `calibration_tables.json` into the working
+directory to immediately upgrade all downstream encoding from ideal-linear to
+physically accurate. Tested on synthetic data; all encoder LUT spot-checks recover
+correct values.
 
-**Phase 5 — Codec design from calibration data** (weeks 6–8)
-With calibration table in hand, design the v4 encoding scheme. Map MDCT coefficient ranges to print configurations. Define the minimum encoding step size. Write the v4 encoder specification.
+**Phase 5 — v4 encoder and disc format** ✓ SOFTWARE COMPLETE
+Full pipeline implemented:
+- `dsa_v4_format.py` — on-disc format: 3-ring sync zone, 8-ring header (magic + CRC-8),
+  deterministic data zone layout; `V4Header` encode/decode with CRC validation
+- `dsa_v4_reader.py` — standalone `.dsa1` reader; self-contained Huffman decoder
+  (LAMBDA=0.4, 34 symbols) verified bit-for-bit against reference encoder;
+  extracts 48-band × n_frames energy array
+- `dsa_v4_encoder.py` — `BandMapper` (log-spaced perceptual aggregation, 48→n bands),
+  `CalibrationTables` (LUT lookup with linear fallback), full `encode_dsa1()` pipeline
+
+Usage: `python3 dsa_v4_encoder.py --dsa audio.dsa1 --out disc_v4.png`
+
+**Phase 6 — Edge case testing** (future, hardware required)
+Test stroboscopic exclusion zones. Test at manually varied speeds (~10rpm, ~20rpm) to
+characterize the discrete→integrated transition. Identify minimum speed threshold.
+
+**Phase 7 — Encoder specification** (future, after Phase 3 data)
+With real calibration tables: define minimum encoding step size, specify v4 bitstream
+format extensions, write v4 encoder specification as a SPEC.md appendix.
 
 ---
 
