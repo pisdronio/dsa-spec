@@ -1,17 +1,22 @@
 """
 calib_extract.py — Digilog Calibration Disc Measurement Extractor
 ==================================================================
-Takes a photograph of a printed calibration disc and extracts mean RGB
-per ring (and per sector for Zone 2), then normalizes against Zone 5
-reference anchors and appends rows to a measurements CSV.
+Takes one or more photographs of a printed calibration disc and extracts
+mean RGB per ring (and per sector for Zone 2), then normalizes against
+Zone 5 reference anchors and writes a measurements CSV.
+
+When multiple photos are supplied (--frames), each is sampled independently
+and the per-ring RGB values are averaged before normalization.  This reduces
+camera sensor noise and exposure variation, especially for spinning shots.
 
 Usage:
-    python3 calib_extract.py PHOTO [options]
+    python3 calib_extract.py PHOTO [PHOTO ...] [options]
 
-    PHOTO               path to disc photograph (JPEG, PNG, TIFF)
+    PHOTO               one or more disc photographs (JPEG, PNG, TIFF)
+                        all must be the same speed and same disc position
 
     --legend  PATH      calib_disc_legend.txt from the generator
-                        (default: calib_disc_legend.txt in same dir as PHOTO)
+                        (default: calib_disc_legend.txt in same dir as first PHOTO)
     --csv     PATH      output CSV path
                         (default: calib_measurements_<speed>rpm.csv)
     --speed   RPM       disc speed when photographed: 0, 33, or 45
@@ -320,8 +325,8 @@ def save_debug_overlay(img_arr, cx, cy, scale, rings, out_path):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Extract ring RGB from calibration disc photo")
-    p.add_argument('photo',            help='Disc photograph path')
+    p = argparse.ArgumentParser(description="Extract ring RGB from calibration disc photo(s)")
+    p.add_argument('photos', nargs='+', help='Disc photograph path(s) — averaged if multiple')
     p.add_argument('--legend',         help='calib_disc_legend.txt path')
     p.add_argument('--csv',            help='Output CSV path')
     p.add_argument('--speed', type=float, default=0, help='Disc speed (rpm)')
@@ -333,118 +338,158 @@ def parse_args():
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
-
-    photo_path = Path(args.photo)
-    if not photo_path.exists():
-        sys.exit(f"Photo not found: {photo_path}")
-
-    # Resolve legend path
-    legend_path = args.legend or (photo_path.parent / 'calib_disc_legend.txt')
-    if not Path(legend_path).exists():
-        sys.exit(f"Legend not found: {legend_path}\nRun calib_disc_gen.py first or pass --legend")
-
-    # Resolve output CSV path
-    speed_tag = f"{int(args.speed)}rpm"
-    csv_path = args.csv or str(photo_path.parent / f"calib_measurements_{speed_tag}.csv")
-
-    print(f"Photo:   {photo_path}")
-    print(f"Legend:  {legend_path}")
-    print(f"Output:  {csv_path}")
-    print(f"Speed:   {args.speed} rpm")
-
-    # Load image
-    img = Image.open(photo_path).convert('RGB')
-    img_arr = np.array(img)
-    h, w = img_arr.shape[:2]
-    print(f"Image:   {w}×{h} px")
-
-    # Geometry
-    if args.cx and args.cy and args.scale:
-        cx, cy, scale = args.cx, args.cy, args.scale
-        print(f"Geometry (manual): cx={cx} cy={cy} scale={scale:.3f} px/mm")
-    else:
-        print("Auto-detecting disc geometry...")
-        try:
-            cx, cy, scale = detect_disc_geometry(img_arr)
-        except RuntimeError as e:
-            sys.exit(str(e))
-
-    # Parse legend
-    rings = parse_legend(legend_path)
-    print(f"Rings:   {len(rings)}")
-
-    # Debug overlay
-    if args.debug:
-        debug_path = str(photo_path.parent / f"calib_debug_{speed_tag}.png")
-        save_debug_overlay(img_arr, cx, cy, scale, rings, debug_path)
-
-    # Sample all rings
-    print("Sampling rings...", end='', flush=True)
-
+def _sample_one_image(img_arr, cx, cy, scale, rings, margin):
+    """
+    Sample all rings from a single image array.
+    Returns (rows, z5_measurements) where rows is a list of dicts with
+    R_raw/G_raw/B_raw as floats (not yet stringified), and z5_measurements
+    maps color_name -> (R, G, B).
+    """
     z5_measurements = {}
     rows = []
 
     for ring in rings:
         r_out_px = ring['r_out_mm'] * scale
         r_in_px  = ring['r_in_mm']  * scale
+        rtype    = ring['type']
 
-        base_row = {
-            'photo':       photo_path.name,
+        base = {
             'zone':        ring['zone'],
             'ring_number': ring['ring_number'],
             'ring_label':  ring['label'],
-            'r_out_mm':    f"{ring['r_out_mm']:.2f}",
-            'r_in_mm':     f"{ring['r_in_mm']:.2f}",
-            'speed_rpm':   args.speed,
+            'r_out_mm':    ring['r_out_mm'],
+            'r_in_mm':     ring['r_in_mm'],
         }
 
-        rtype = ring['type']
-
         if rtype == 'z2' and ring['sectors']:
-            # Sample each sector separately
             for sec in ring['sectors']:
                 a_start = sec['angle_deg']
                 a_end   = a_start + 360.0 / len(ring['sectors'])
                 rgb = sample_sector(img_arr, cx, cy, r_in_px, r_out_px,
-                                    a_start, a_end, args.margin)
-                rows.append({**base_row,
+                                    a_start, a_end, margin)
+                rows.append({**base,
                     'sector':    sec['number'],
                     'ratio_pct': sec['ratio_pct'],
                     'module_mm': '',
-                    'R_raw': f"{rgb[0]:.1f}" if rgb else '',
-                    'G_raw': f"{rgb[1]:.1f}" if rgb else '',
-                    'B_raw': f"{rgb[2]:.1f}" if rgb else '',
-                    'R_norm': '', 'G_norm': '', 'B_norm': '',
-                    'notes': 'no pixels sampled' if rgb is None else '',
+                    'rgb':       rgb,
                 })
         else:
-            rgb = sample_annulus(img_arr, cx, cy, r_in_px, r_out_px, args.margin)
-
-            row = {**base_row,
+            rgb = sample_annulus(img_arr, cx, cy, r_in_px, r_out_px, margin)
+            rows.append({**base,
                 'sector':    '',
                 'ratio_pct': '',
                 'module_mm': ring.get('module_mm', ''),
-                'R_raw': f"{rgb[0]:.1f}" if rgb else '',
-                'G_raw': f"{rgb[1]:.1f}" if rgb else '',
-                'B_raw': f"{rgb[2]:.1f}" if rgb else '',
-                'R_norm': '', 'G_norm': '', 'B_norm': '',
-                'notes': 'no pixels sampled' if rgb is None else '',
-            }
-            rows.append(row)
-
+                'rgb':       rgb,
+            })
             if rtype == 'z5' and rgb:
                 z5_measurements[ring['color_name']] = rgb
 
-        print('.', end='', flush=True)
+    return rows, z5_measurements
 
-    print()
 
-    # Build white-balance correction from Zone 5
+def _average_rgb_rows(all_rows_per_frame):
+    """
+    Average RGB values across multiple frames for corresponding rows.
+    all_rows_per_frame: list of row-lists (one per frame), each row-list
+    has the same structure and order.
+    Returns a single row-list with averaged rgb tuples.
+    """
+    if len(all_rows_per_frame) == 1:
+        return all_rows_per_frame[0]
+
+    averaged = []
+    for row_idx in range(len(all_rows_per_frame[0])):
+        rgbs = [frame_rows[row_idx]['rgb']
+                for frame_rows in all_rows_per_frame
+                if frame_rows[row_idx]['rgb'] is not None]
+        if rgbs:
+            avg_rgb = tuple(sum(c[i] for c in rgbs) / len(rgbs) for i in range(3))
+        else:
+            avg_rgb = None
+        merged = dict(all_rows_per_frame[0][row_idx])
+        merged['rgb'] = avg_rgb
+        averaged.append(merged)
+    return averaged
+
+
+def main():
+    args = parse_args()
+
+    photo_paths = [Path(p) for p in args.photos]
+    for p in photo_paths:
+        if not p.exists():
+            sys.exit(f"Photo not found: {p}")
+
+    first_photo = photo_paths[0]
+    legend_path = args.legend or (first_photo.parent / 'calib_disc_legend.txt')
+    if not Path(legend_path).exists():
+        sys.exit(f"Legend not found: {legend_path}\nRun calib_disc_gen.py first or pass --legend")
+
+    speed_tag = f"{int(args.speed)}rpm"
+    csv_path  = args.csv or str(first_photo.parent / f"calib_measurements_{speed_tag}.csv")
+
+    n_frames = len(photo_paths)
+    print(f"Photos:  {n_frames} frame(s){' — will average' if n_frames > 1 else ''}")
+    for p in photo_paths:
+        print(f"         {p}")
+    print(f"Legend:  {legend_path}")
+    print(f"Output:  {csv_path}")
+    print(f"Speed:   {args.speed} rpm")
+
+    # Load first image to establish geometry
+    img0     = Image.open(photo_paths[0]).convert('RGB')
+    img0_arr = np.array(img0)
+    h, w     = img0_arr.shape[:2]
+    print(f"Image:   {w}×{h} px")
+
+    if args.cx and args.cy and args.scale:
+        cx, cy, scale = args.cx, args.cy, args.scale
+        print(f"Geometry (manual): cx={cx} cy={cy} scale={scale:.3f} px/mm")
+    else:
+        print("Auto-detecting disc geometry...")
+        try:
+            cx, cy, scale = detect_disc_geometry(img0_arr)
+        except RuntimeError as e:
+            sys.exit(str(e))
+
+    rings = parse_legend(legend_path)
+    print(f"Rings:   {len(rings)}")
+
+    if args.debug:
+        debug_path = str(first_photo.parent / f"calib_debug_{speed_tag}.png")
+        save_debug_overlay(img0_arr, cx, cy, scale, rings, debug_path)
+
+    # Sample each frame
+    all_frame_rows = []
+    all_z5         = []
+
+    for fi, photo_path in enumerate(photo_paths):
+        label = f"frame {fi+1}/{n_frames}" if n_frames > 1 else "sampling"
+        print(f"Sampling {label}...", end='', flush=True)
+        img_arr = np.array(Image.open(photo_path).convert('RGB'))
+        frame_rows, z5 = _sample_one_image(img_arr, cx, cy, scale, rings, args.margin)
+        all_frame_rows.append(frame_rows)
+        all_z5.append(z5)
+        print(f" {len(frame_rows)} rows")
+
+    # Average across frames
+    rows = _average_rgb_rows(all_frame_rows)
+
+    # Build Z5 correction from averaged Z5 readings
+    z5_avg = {}
+    for name in COLOR_ORDER:
+        readings = [z5[name] for z5 in all_z5 if name in z5]
+        if readings:
+            z5_avg[name] = tuple(sum(r[i] for r in readings) / len(readings)
+                                 for i in range(3))
+
+    z5_measurements = z5_avg
+
+    # Build white-balance correction from averaged Zone 5
     if z5_measurements:
         corrections = build_correction(z5_measurements)
-        print(f"Zone 5 normalization built from {len(z5_measurements)} anchors")
+        print(f"Zone 5 normalization: {len(z5_measurements)} anchors"
+              + (f" averaged over {n_frames} frames" if n_frames > 1 else ""))
         if 'W' in corrections:
             cr, cg, cb = corrections['W']
             print(f"  White correction: R×{cr:.3f}  G×{cg:.3f}  B×{cb:.3f}")
@@ -452,14 +497,35 @@ def main():
         corrections = {}
         print("WARNING: No Zone 5 measurements — normalization skipped")
 
-    # Apply normalization
+    # Stringify and apply normalization
+    photo_label = '+'.join(p.name for p in photo_paths) if n_frames > 1 else first_photo.name
+    out_rows = []
     for row in rows:
-        if row['R_raw'] and corrections:
-            rgb_raw = (float(row['R_raw']), float(row['G_raw']), float(row['B_raw']))
-            rgb_norm = apply_correction(rgb_raw, corrections)
-            row['R_norm'] = f"{rgb_norm[0]:.1f}"
-            row['G_norm'] = f"{rgb_norm[1]:.1f}"
-            row['B_norm'] = f"{rgb_norm[2]:.1f}"
+        rgb = row['rgb']
+        out = {
+            'photo':       photo_label,
+            'zone':        row['zone'],
+            'ring_number': row['ring_number'],
+            'ring_label':  row['ring_label'],
+            'r_out_mm':    f"{row['r_out_mm']:.2f}",
+            'r_in_mm':     f"{row['r_in_mm']:.2f}",
+            'sector':      row['sector'],
+            'ratio_pct':   row['ratio_pct'],
+            'module_mm':   row['module_mm'],
+            'speed_rpm':   args.speed,
+            'R_raw':  f"{rgb[0]:.1f}" if rgb else '',
+            'G_raw':  f"{rgb[1]:.1f}" if rgb else '',
+            'B_raw':  f"{rgb[2]:.1f}" if rgb else '',
+            'R_norm': '', 'G_norm': '', 'B_norm': '',
+            'notes':  'no pixels sampled' if rgb is None else
+                      (f'avg {n_frames} frames' if n_frames > 1 else ''),
+        }
+        if rgb and corrections:
+            rgb_norm = apply_correction(rgb, corrections)
+            out['R_norm'] = f"{rgb_norm[0]:.1f}"
+            out['G_norm'] = f"{rgb_norm[1]:.1f}"
+            out['B_norm'] = f"{rgb_norm[2]:.1f}"
+        out_rows.append(out)
 
     # Write CSV
     fieldnames = ['photo', 'zone', 'ring_number', 'ring_label', 'r_out_mm', 'r_in_mm',
@@ -468,19 +534,21 @@ def main():
     with open(csv_path, 'w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         w.writeheader()
-        w.writerows(rows)
+        w.writerows(out_rows)
 
-    print(f"Written {len(rows)} rows → {csv_path}")
+    print(f"Written {len(out_rows)} rows → {csv_path}")
 
-    # Print Zone 5 summary for quick sanity check
+    # Zone 5 summary
     if z5_measurements:
-        print("\nZone 5 anchor readings (raw):")
+        print("\nZone 5 anchor readings (averaged raw):")
         for name in COLOR_ORDER:
             if name in z5_measurements:
                 meas = z5_measurements[name]
                 exp  = Z5_EXPECTED[name]
-                print(f"  {name}: measured ({meas[0]:.0f},{meas[1]:.0f},{meas[2]:.0f})  "
-                      f"expected {exp}")
+                dist = math.sqrt(sum((meas[i]-exp[i])**2 for i in range(3)))
+                flag = '✓' if dist < 5 else '⚠'
+                print(f"  {flag} {name}: ({meas[0]:.0f},{meas[1]:.0f},{meas[2]:.0f})"
+                      f"  expected {exp}  dist={dist:.1f}")
 
 
 if __name__ == '__main__':

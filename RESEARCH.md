@@ -2099,6 +2099,161 @@ All of these are constructible from first-principles DSP: sine oscillators, nois
 
 ---
 
+---
+
+## 18. Project Status and Experimental Roadmap
+
+**Last updated:** April 2026
+
+---
+
+### 18.1 Software completion status
+
+| Tool | File | Status |
+|------|------|--------|
+| Calibration disc generator | `calib_disc_gen.py` | ✓ Complete |
+| Measurement extractor | `calib_extract.py` | ✓ Complete (multi-frame averaging) |
+| Calibration table builder | `calib_build_tables.py` | ✓ Complete |
+| v4 disc format | `dsa_v4_format.py` | ✓ Complete |
+| .dsa1 reader | `dsa_v4_reader.py` | ✓ Complete |
+| v4 encoder | `dsa_v4_encoder.py` | ✓ Complete |
+
+The full pipeline is software-complete and end-to-end tested:
+
+```
+audio.wav → (DSA v1 encoder) → audio.dsa1
+                                     │
+                                     ▼
+                           python3 dsa_v4_encoder.py --dsa audio.dsa1
+                                     │
+                                     ▼
+                               disc_v4.png  (printable, physically calibrated)
+```
+
+The only gap between current state and a physically accurate encoding is the
+`calibration_tables.json` file. Currently generated from synthetic data (ideal
+linear blending model). Must be replaced with real measurements using the
+calibration disc. All downstream tools hot-swap automatically when a real
+`calibration_tables.json` is placed in the working directory — no code changes needed.
+
+---
+
+### 18.2 Calibration measurement procedure
+
+**Equipment required:**
+- Turntable (any speed-accurate model — standard DJ or hi-fi)
+- Prototype Rig: rigid overhead mount for phone camera, 10–12cm above disc surface
+- Diffuse lighting: ring light around the phone, or shoot near a bright overcast window
+- Printed `calib_disc.png` at exactly 300 DPI on the reference substrate
+
+**Rig geometry:**
+- Calibration position: camera centred overhead, 10–12cm above disc (full disc visible)
+- Playback position: camera aimed at a radial strip at ~85mm radius, 6–10cm above disc
+- Use the same phone for both — the calibration tables are specific to the camera model
+
+**Capture procedure:**
+```bash
+# Disc stopped (0 rpm) — full disc visible, camera overhead
+python3 calib_extract.py stopped.jpg --speed 0 --cx X --cy Y --scale S
+
+# Disc at 33 rpm — single frame from Rig camera during playback
+python3 calib_extract.py frame_33.jpg --speed 33 --cx X --cy Y --scale S
+
+# Disc at 45 rpm — single frame from Rig camera during playback
+python3 calib_extract.py frame_45.jpg --speed 45 --cx X --cy Y --scale S
+
+# Optional: average multiple frames at the same speed to reduce noise
+python3 calib_extract.py f1.jpg f2.jpg f3.jpg --speed 33 --cx X --cy Y --scale S
+
+# Build tables
+python3 calib_build_tables.py meas_0rpm.csv meas_33rpm.csv meas_45rpm.csv
+```
+
+**Finding cx, cy, scale:** open any photo in an image viewer, click the disc
+centre → cx, cy. Measure the disc diameter in pixels, divide by 304.8 → scale.
+These are constants for a fixed Rig — measure once and reuse.
+
+**First run: always use `--debug`** to generate a ring overlay image and verify
+the ring boundaries land correctly on the photo before trusting any measurements.
+
+---
+
+### 18.3 Print and substrate test matrix
+
+The calibration table is specific to one (printer × substrate × print quality) combination.
+Before committing to a reference substrate, run the minimum viable test matrix:
+
+| Print | Substrate | Quality | Captures | Purpose |
+|-------|-----------|---------|----------|---------|
+| A | Matte photo paper | Best | 0rpm, 33rpm, 45rpm | Primary candidate |
+| B | Plain office paper | Best | 0rpm, 33rpm | Baseline / cost comparison |
+| C | Matte photo paper | Draft | 0rpm | Dot gain comparison vs A |
+| D | Sticker/vinyl | Best | 0rpm, 33rpm | Real Digilog disc material |
+
+Run `calib_build_tables.py` on each print separately. Compare the
+`calibration_tables_report.txt` output across prints:
+
+- **Zone 3 density threshold:** finest integrating module size — lower = more capacity
+- **Zone 2 R² linearity:** closer to 1.0 = more predictable ratio encoding
+- **Zone 1 discriminability:** number of usable color pairs — more = higher encoding flexibility
+- **Zone 5 residuals at 33rpm:** lower = less motion-induced colour shift
+
+The print with the finest integrating module, highest linearity, and most usable pairs
+becomes the reference substrate. All subsequent encoding uses its calibration tables.
+
+**Printer type note:** inkjet and laser produce fundamentally different dot gain profiles.
+If both printer types are available, test one substrate on each — the results will differ
+significantly. The calibration table is printer-specific, not just substrate-specific.
+
+**Lighting note:** test the chosen substrate under two conditions: (1) diffuse daylight,
+(2) controlled artificial light. If the Zone 5 white correction factor differs by more
+than 20% between conditions, the lighting must be standardised before measurements are
+reliable. Use whichever condition is reproducible for all future sessions.
+
+---
+
+### 18.4 Expected calibration report interpretation
+
+After running `calib_build_tables.py`, read `calibration_tables_report.txt` before
+proceeding. Expected findings and their implications:
+
+**Zone 5 residuals at 0rpm:** should be near zero (< 5 dist). Large residuals at 0rpm
+indicate a camera white-balance problem. Reshoot with manual white balance locked.
+
+**Zone 5 residuals at 33rpm:** will be non-zero — this is expected. The residual is
+the motion blur acting on a solid-color ring. Larger residual = more motion blur =
+more integration happening = good for the encoding principle.
+
+**Zone 3 threshold at 0rpm vs 33rpm:** the threshold at 33rpm should be coarser
+(larger module size) than at 0rpm. If it is finer at 33rpm, the measurement is
+suspect — motion blur should reduce resolution, not increase it.
+
+**Zone 2 R² < 0.95:** the ratio→read-value curve is non-linear for that pair.
+Non-linear is expected and fine — `calib_build_tables.py` handles it with piecewise
+interpolation. But R² < 0.80 suggests measurement noise. Reshoot with more frames
+(`calib_extract.py photo1.jpg photo2.jpg photo3.jpg`) to average out noise.
+
+**Pair discriminability ✗:** Y+W is expected to fail (yellow and white are too close).
+More than 3–4 failing pairs suggests the print has too little colour saturation.
+Try a higher quality print setting or a different substrate.
+
+---
+
+### 18.5 After calibration: what changes
+
+Once `calibration_tables.json` is built from real measurements:
+
+1. **`dsa_v4_encoder.py`** uses real ratio curves → print ratios are physically accurate
+2. **Color pair assignment** uses measured discriminability → weakly discriminable pairs
+   are automatically deprioritised for the most critical frequency bands
+3. **Module size** is set to the measured density threshold → finest printable dots
+4. **No code changes required** — swap the JSON file, re-run the encoder
+
+The v4 disc output will change substantially: with ideal linear tables the encoding
+is approximate; with real tables it is calibrated to the actual ink/paper/camera system.
+
+---
+
 *This document is a living research record. It will be updated as implementation progresses and will form the basis of a formal scientific publication.*
 
 *github.com/pisdronio/dsa*
