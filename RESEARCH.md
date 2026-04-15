@@ -1703,13 +1703,282 @@ The strip visualization produced by dsa_strip.py is a useful diagnostic but not 
 
 ---
 
-## 16. MIDI Interoperability — DSA as a Musical Data Language
+## 16. Visual Agglomeration — Minimum Physical Footprint for Optically Encoded Audio
+
+**Status:** Open research problem. No implementation exists. This section defines the problem space, candidate solutions, and open questions that must be answered before any implementation can be specified.
+
+**Initiated:** April 2026, following first physical strip render of Guerrero (3 seconds of audio producing a 403×88mm image at 96 DPI).
+
+---
+
+### 16.1 The problem statement
+
+The current DSA visual representation has a fundamental size mismatch between information content and physical footprint.
+
+**The information content of 3 seconds of DSA audio at 12 kbps:**
+
+```
+48 bands × 129 frames × 2 values (steepness + direction) = 12,384 scalar values
+Each value: steepness ∈ [0.0, 1.0], direction ∈ {-1, +1}
+Total information: approximately 12,384 × 5 bits = ~7.7 KB
+```
+
+**The physical footprint of the current visual representation:**
+
+```
+Current render: 403mm × 88mm at 96 DPI = 1479 × 352 px = ~1.6 MB uncompressed
+Cell size: 3mm × 1.5mm minimum (phone camera readability constraint)
+```
+
+The physical representation is approximately 200× larger than the information it carries. Every millimeter of disc area spent on whitespace, band separation, and oversized gradient cells is a millimeter that could carry additional audio.
+
+This is not a compression problem in the traditional sense. The DSA audio codec is already compressing aggressively. The gap is between the information density the optical channel can theoretically support and the information density the current visual encoding achieves.
+
+**The research question:**
+
+*What is the minimum physical disc area required to encode one second of DSA audio at phone camera resolution, and what visual representation achieves that minimum?*
+
+---
+
+### 16.2 The waveform comparison
+
+A standard audio waveform visualization of 3 seconds of audio at the same pixel width as the current DSA strip occupies approximately 1 pixel of height — a single horizontal line. DSA requires 352 pixels of height for the same duration because it encodes 48 frequency bands simultaneously rather than just amplitude over time.
+
+This is not a flaw — encoding 48 bands is what makes DSA a codec rather than a recording. But it illustrates the scale of the footprint problem. The question is not whether 48 bands require more space than a waveform — they necessarily do. The question is whether 48 bands require as much space as the current implementation uses.
+
+The answer is almost certainly no.
+
+---
+
+### 16.3 The physical readability constraint
+
+The current cell size (3mm × 1.5mm minimum) is not derived from information theory. It is derived from a practical constraint: a phone camera at arm's length (20-30cm) must resolve the gradient direction within a single cell. This is the floor imposed by the optical channel — the human-held camera reading a physical surface.
+
+This constraint is real and cannot be engineered away for the phone camera use case. But it is not uniform across all layers:
+
+**L0 (bass, inner rings):** Must read under any conditions — worn print, cheap camera, ambient light. Large cells, high contrast pairs. Robustness is the priority. Cell size cannot decrease significantly without risk.
+
+**L1 (mids, middle rings):** Readable by any modern phone under normal conditions. Cell size is constrained by the weakest phone camera in the target user base.
+
+**L2 (highs, outer rings):** Requires Digilog Rig with controlled lighting. The optical channel here is significantly better than phone camera. Cell size could be much smaller — the Rig can resolve finer features than a handheld phone.
+
+**The implication:** L2 cells are currently sized for phone camera readability even though L2 requires the Rig. This is the wrong optimization. L2 cells could be 3-5× smaller than L0 cells, dramatically increasing information density in the outer ring area.
+
+---
+
+### 16.4 Candidate solutions
+
+The following approaches are not mutually exclusive. A future DSA visual encoding version would likely combine several.
+
+#### 16.4.1 Layer-variable cell size
+
+The most immediate improvement. L0 cells stay large for robustness. L1 cells shrink moderately. L2 cells shrink aggressively to Rig-resolution limits.
+
+```
+Current:  all layers use same cell dimensions
+Proposed: L0 = 3.0mm × 1.5mm  (unchanged)
+          L1 = 1.5mm × 1.0mm  (50% width reduction)
+          L2 = 0.5mm × 0.5mm  (83% area reduction)
+```
+
+L2 has 24 bands. At current size it occupies the largest physical area. Shrinking L2 cells to Rig resolution limits could reduce total disc area by 40-60% for the same audio content — equivalent to doubling the disc's audio capacity.
+
+**Open question:** What is the Rig's actual minimum resolvable feature size? Section 13.4 estimates this can be measured with the calibration disc. Until measured, L2 minimum cell size is unknown.
+
+#### 16.4.2 Temporal cell merging
+
+If adjacent frames in the same band are perceptually identical — same steepness and direction — encode a single wider cell with an implicit duration rather than N identical narrow cells.
+
+```
+Current:  frame 1 = [steepness=0.8, dir=+1]
+          frame 2 = [steepness=0.8, dir=+1]
+          frame 3 = [steepness=0.8, dir=+1]
+          → 3 separate cells, 3× physical width
+
+Proposed: [steepness=0.8, dir=+1, duration=3]
+          → 1 cell, 3× physical width
+          (visually identical, same arc length, zero information loss)
+```
+
+The tape head reads the wider cell for longer — the audio plays back at the same tempo and pitch because the physical arc length is unchanged. The frame count is preserved. Only the visual encoding is merged.
+
+This is lossless. The merged cell carries exactly the same information as N identical cells. The gain comes from eliminating the redundant cell boundaries between identical frames.
+
+**Estimated gain:** Highly content-dependent. Silence sections compress to a single cell per band. Sustained notes compress significantly. Percussive content with rapid change compresses minimally. For typical music, estimated 20-40% reduction in physical strip length.
+
+**Open question:** What is the minimum cell width the tape head reader can process reliably? A very wide merged cell (many identical frames) must still be readable as a single unit, not misread as multiple short cells.
+
+#### 16.4.3 Multi-bit dot encoding
+
+The current encoding uses one gradient cell per value (steepness + direction = approximately 5 bits). QR codes encode approximately 3 bits per module at their highest density, using a much smaller physical footprint per bit than the current DSA gradient cell.
+
+A higher-density dot encoding could represent multiple DSA coefficient values in the same physical area currently used for one. The tradeoff is increased sensitivity to print quality and reading conditions.
+
+```
+Current gradient cell:   ~5 bits in 3mm × 1.5mm = 1.1 bits/mm²
+QR high density:         ~3 bits in 0.3mm × 0.3mm = 33 bits/mm²
+Theoretical gap:         30× more information per unit area possible
+```
+
+The 30× figure is theoretical — DSA requires robustness and graceful degradation that QR codes do not. But even achieving 5-10× improvement over the current encoding would transform the format's physical capacity.
+
+**Open question:** Is there a visual encoding scheme that achieves multi-bit density while preserving the confidence-weighted degradation property? A QR-style binary encoding fails gracefully as noise or silence rather than as a spectral dropout. DSA's analog degradation model requires the encoding to support continuous confidence values, not binary success/failure.
+
+#### 16.4.4 Frequency-to-color direct encoding
+
+The current scheme encodes coefficient magnitude as gradient steepness and sign as gradient direction. This requires a spatial gradient — the cell must have width for the gradient to exist.
+
+An alternative: encode the coefficient value directly as a color from a continuous palette rather than as a gradient between two anchor colors. A cell could be a single solid color drawn from a perceptually uniform color space, where position in color space encodes the coefficient value.
+
+```
+Current:  cell = gradient from Color_A to Color_B
+          steepness encodes magnitude, direction encodes sign
+          minimum width required for gradient to be readable
+
+Proposed: cell = solid color from CIELAB continuous palette
+          Lab position encodes magnitude and sign simultaneously
+          minimum width = single pixel (practical minimum: 0.3mm)
+```
+
+This eliminates the gradient width requirement entirely. Cells can be as narrow as the printer and camera can resolve. The information density improvement is proportional to the width reduction — potentially 5-10× for L1/L2 bands.
+
+**Critical open question:** Can a phone camera reliably distinguish enough Lab values to encode DSA's quantization steps? The camera's color noise floor limits how many distinguishable steps exist in practice. This must be measured with the calibration disc before the approach can be designed.
+
+**The confidence degradation question:** Gradient cells provide natural confidence information — a blurry or misread gradient has reduced contrast between the two endpoint colors, which maps directly to a reduced α value. A solid color cell provides no natural confidence signal — either the color is read correctly or it is not. The analog degradation model requires a confidence mechanism. How does a solid color encoding provide one?
+
+Possible answer: confidence is derived from color accuracy — how close the observed color is to the nearest valid palette value. A worn or blurred solid color cell drifts toward an adjacent palette value and the drift distance is the confidence score. This preserves the analog degradation property but requires the palette to be dense enough that drift is measurable and sparse enough that nearby values are distinguishable.
+
+#### 16.4.5 Hierarchical spatial encoding
+
+Inspired by wavelet image compression and the Daala video codec's superblock structure. Encode broad spectral features at low spatial frequency (large cells) and fine spectral detail at high spatial frequency (small cells), nested hierarchically.
+
+```
+Level 0 (coarsest): one large cell encodes the dominant spectral
+                    shape of an entire GOP (8 frames × 48 bands)
+Level 1:            cells encode per-frame deviation from GOP shape
+Level 2 (finest):   cells encode per-band deviation from frame shape
+```
+
+A musically stable passage — sustained chord, steady rhythm — has small deviations at levels 1 and 2 and can be encoded almost entirely in the Level 0 cell. A complex transient requires full Level 1 and 2 detail. The physical footprint adapts to the musical content.
+
+This is structurally analogous to what DSA's K-frame/B-frame GOP structure does in the temporal domain — it could be extended into the spatial/visual domain.
+
+**Open question:** Is hierarchical spatial encoding compatible with the tape head reading model? The tape head reads a continuous strip linearly. A hierarchical encoding that requires non-linear spatial access would require a fundamentally different reading architecture.
+
+---
+
+### 16.5 The information-theoretic bound
+
+Before investing in any specific approach, the theoretical maximum information density of the optical channel should be established. This is the ceiling — no encoding scheme can exceed it.
+
+The optical channel capacity is determined by:
+
+```
+C = W × log₂(1 + SNR)
+
+Where:
+W   = spatial bandwidth (resolvable features per unit area)
+SNR = color signal-to-noise ratio of the camera at the target distance
+```
+
+W is determined by the camera resolution at target distance and the printer's minimum dot size. SNR is determined by the camera's color noise floor, which can be measured from the calibration disc.
+
+Once C is known, the gap between current encoding efficiency and the theoretical maximum defines the research opportunity. If the current encoding is already at 50% of channel capacity, the maximum possible improvement is 2×. If it is at 5% of channel capacity, the opportunity is 20×.
+
+**This measurement should be the first step before any visual encoding redesign.**
+
+---
+
+### 16.6 Format integrity constraints
+
+Any visual encoding improvement must preserve the following invariants, which are non-negotiable properties of the Digilog format:
+
+**1. RPM independence of audio duration**
+The relationship between physical arc length and audio duration is fixed by the format. Visual compression that reduces the physical footprint of a frame must preserve the arc length per frame — the tape head reads the same physical distance per unit time regardless of encoding density. More efficient encoding means more frames per unit arc length, which means longer audio on the same disc. It does not mean faster or slower playback.
+
+**2. Analog degradation preservation**
+The encoding must support continuous confidence values α ∈ [0.0, 1.0]. Binary success/failure encodings are incompatible with DSA's degradation model. Any new visual encoding must degrade gracefully — partial reads produce attenuated audio, not silence or noise.
+
+**3. Layer independence**
+L0, L1, and L2 must remain independently readable. A reader with access only to L0 must produce valid bass audio. Encoding schemes that entangle layer information spatially violate this constraint.
+
+**4. Backward compatibility path**
+A DSA v1 reader encountering a high-density visual encoding should fail gracefully — produce silence or low-quality audio rather than corrupted output. The format version byte in the file header must be sufficient to detect encoding version and route accordingly.
+
+---
+
+### 16.7 Open research questions
+
+1. What is the actual information-theoretic capacity of the phone camera optical channel at 20-30cm distance from a 300 DPI print? This is measurable with the calibration disc.
+
+2. What is the Rig's minimum resolvable feature size? This determines the L2 cell size floor.
+
+3. Can solid color encoding support analog confidence degradation? What palette density is required?
+
+4. What is the minimum cell width for reliable gradient direction reading at phone camera resolution? This determines the floor for gradient-based encoding.
+
+5. Is temporal cell merging compatible with the tape head reader architecture? What is the minimum and maximum merged cell width the reader can handle?
+
+6. What is the actual compression ratio achievable with temporal merging on typical music? Measure on the Guerrero track as a reference.
+
+7. Can hierarchical spatial encoding be made compatible with linear tape head reading?
+
+8. What is the current encoding efficiency as a percentage of theoretical channel capacity?
+
+---
+
+### 16.8 Proposed research path
+
+**Phase 1 — Measure the channel**
+Use the calibration disc to measure W and SNR for both phone camera and Rig conditions. Compute theoretical maximum information density for each. Establish the gap between current encoding and the theoretical bound. This takes precedence over any implementation work.
+
+**Phase 2 — Layer-variable cell size**
+The lowest-risk improvement. Shrink L2 cells to Rig resolution limits. Measure actual accuracy improvement on the calibration disc. Quantify disc capacity gain. This requires only renderer changes — codec and bitstream unchanged.
+
+**Phase 3 — Temporal cell merging**
+Implement run-length merging of identical adjacent frames per band. Measure compression ratio on real music. Verify tape head reader handles variable-width cells correctly. Codec unchanged, renderer and reader both require updates.
+
+**Phase 4 — Multi-bit or solid color encoding**
+Only after Phase 1 establishes whether the channel can support it. Higher risk, higher potential gain. Requires new reader architecture and may require new confidence model.
+
+**Phase 5 — Hierarchical spatial encoding**
+The most complex and highest-potential approach. Only after Phases 1-3 are complete and measured.
+
+---
+
+### 16.9 References for this section
+
+33. Shannon, C.E. (1948). "A mathematical theory of communication." *Bell System Technical Journal*, 27(3), 379–423. — Foundational information theory establishing channel capacity bounds; directly applicable to the optical channel capacity calculation in Section 16.5.
+
+34. Nyquist, H. (1928). "Certain topics in telegraph transmission theory." *Transactions of the AIEE*, 47, 617–644. — Sampling theorem establishing the relationship between spatial bandwidth and resolvable features; governs the W term in the channel capacity formula.
+
+35. ISO/IEC 18004:2015. *Information technology — Automatic identification and data capture techniques — QR Code bar code symbology specification*. — QR code specification defining multi-bit dot encoding at high spatial density; the benchmark for information density per unit area in optical codes.
+
+36. Pennebaker, W.B., Mitchell, J.L. (1992). *JPEG Still Image Data Compression Standard*. Van Nostrand Reinhold. — JPEG's spatial frequency decomposition and quantization are directly analogous to the hierarchical spatial encoding concept in Section 16.4.5.
+
+37. Taubman, D., Marcellin, M. (2001). *JPEG 2000: Image Compression Fundamentals, Standards and Practice*. Kluwer Academic. — Wavelet-based hierarchical image compression; the theoretical basis for the Level 0/1/2 hierarchical spatial encoding concept.
+
+38. Asada, N., Amano, A., Baba, M. (1996). "Perceptual transparent coding of natural images based on visual masking." *Proceedings of ICIP*. — Perceptual coding adapted to the human visual system's spatial frequency sensitivity; relevant to optimizing visual encoding for camera-based reading rather than human viewing.
+
+39. Wahl, F.M. (1987). *Digital Image Signal Processing*. Artech House. — Spatial resolution limits of imaging systems; the basis for computing W from camera specifications and print resolution.
+
+40. Itten, J. (1961). *Kunst der Farbe* (The Art of Color). Otto Maier Verlag. — Color theory including simultaneous contrast and color interaction effects that affect how adjacent gradient cells are perceived and read by camera sensors; relevant to minimum cell spacing requirements.
+
+---
+
+*Section 16 added April 2026 following first physical strip render revealing the footprint gap between DSA information content and visual representation size. No implementation changes are proposed here — this section defines the research problem that must be solved before implementation begins.*
+
+*The calibration disc measurements proposed in Section 13 are prerequisite to all Phase 1 work described here.*
+
+---
+
+## 17. MIDI Interoperability — DSA as a Musical Data Language
 
 **Status:** Research direction — identified April 2026. No implementation timeline.
 
 ---
 
-### 16.1 Structural analogy between DSA and MIDI
+### 17.1 Structural analogy between DSA and MIDI
 
 The DSA (frame, band) spectral matrix is structurally analogous to a MIDI piano roll:
 
@@ -1731,7 +2000,7 @@ Both formats represent musical energy as a 2D time-frequency matrix. The differe
 
 The disc strip view (dsa_strip.py) already produces an image that visually resembles a MIDI piano roll. This is not coincidence — both formats are time-frequency energy representations. The analogy suggests a natural bidirectional bridge.
 
-### 16.2 MIDI → DSA path
+### 17.2 MIDI → DSA path
 
 A MIDI file contains note events (pitch, velocity, duration, channel) and tempo information. Converting MIDI to a Digilog disc requires:
 
@@ -1750,7 +2019,7 @@ A DSA-native instrument library would be designed around the layer structure:
 
 This maps directly to how DJs layer a track: bass is always present, mids carry the groove, highs are the texture. A disc encoded from a DSA-native MIDI render would degrade exactly like its musical role suggests — outer rings wear off first, the bass stays.
 
-### 16.3 DSA → MIDI path (reverse: disc to score)
+### 17.3 DSA → MIDI path (reverse: disc to score)
 
 A spinning DSA disc produces a stream of spectral band values per frame. These can be mapped to MIDI note events:
 
@@ -1771,7 +2040,7 @@ pitch = round(69 + 12 × log2(f_center / 440))
 
 where f_center is the center frequency of each band. L0 bands map to MIDI notes 24–36 (C1–C2), L1 to 36–72 (C2–C5), L2 to 72–108 (C5–C8).
 
-### 16.4 Backwards MIDI — physical-media native sequencer
+### 17.4 Backwards MIDI — physical-media native sequencer
 
 The MIDI → DSA → physical disc pathway enables a new use: a sequencer format designed from the start for physical media playback.
 
@@ -1783,7 +2052,7 @@ A "Backwards MIDI" format would be a disc-native sequencer:
 - **Variable speed = variable tempo**: slowing the disc slows the tempo naturally, with pitch coupled (vinyl feel). Pitch-independent time stretch would require the phase vocoder path.
 - **Physical score**: the disc IS the score. Every note is visible as a colored arc. A musician can read the disc directly and understand the composition without playing it.
 
-### 16.5 DSP synthesizer library for disc-native instruments
+### 17.5 DSP synthesizer library for disc-native instruments
 
 For MIDI → DSA to produce musically useful output without requiring external audio files, DSA needs a built-in DSP synthesis library.
 

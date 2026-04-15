@@ -56,7 +56,7 @@ DSA is an audio codec built for a specific purpose: encoding audio into a physic
 - **Transform:** MDCT, N=2048, M=1024, sine window, 238 dB TDAC SNR
 - **Frame structure:** GOP=8, K-frames (self-contained) + B-frames (bidirectional)
 - **Layers:** L0 (8 bands, 20–800 Hz), L1 (16 bands, 800–6 kHz), L2 (24 bands, 6–22 kHz)
-- **Entropy coding:** Huffman with per-layer tables
+- **Entropy coding:** Huffman, static codebooks per layer (L0/L1/L2, Laplacian-derived)
 - **Bitstream:** DSA1 format, CRC32, two encoding modes (discrete / gradient)
 
 ---

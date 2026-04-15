@@ -133,31 +133,48 @@ Layer 1 — log, 16 bands:
   Band 23:  4699 –  6000 Hz
 
 Layer 2 — log, 24 bands:
-  Band 24:  6000 –  6415 Hz
-  Band 25:  6415 –  6860 Hz
-  Band 26:  6860 –  7335 Hz
-  Band 27:  7335 –  7843 Hz
-  Band 28:  7843 –  8388 Hz
-  Band 29:  8388 –  8972 Hz
-  Band 30:  8972 –  9591 Hz
-  Band 31:  9591 – 10260 Hz
-  Band 32: 10260 – 10970 Hz
-  Band 33: 10970 – 11729 Hz
-  Band 34: 11729 – 12542 Hz
-  Band 35: 12542 – 13411 Hz
-  Band 36: 13411 – 14342 Hz
-  Band 37: 14342 – 15338 Hz
-  Band 38: 15338 – 16403 Hz
-  Band 39: 16403 – 17545 Hz
-  Band 40: 17545 – 18764 Hz
-  Band 41: 18764 – 20068 Hz
-  Band 42: 20068 – 21460 Hz
-  Band 43: 21460 – 22050 Hz
-  Bands 44–47: remaining bins to Nyquist
+  Band 24:  6000 –  6334 Hz
+  Band 25:  6334 –  6687 Hz
+  Band 26:  6687 –  7060 Hz
+  Band 27:  7060 –  7454 Hz
+  Band 28:  7454 –  7869 Hz
+  Band 29:  7869 –  8307 Hz
+  Band 30:  8307 –  8770 Hz
+  Band 31:  8770 –  9259 Hz
+  Band 32:  9259 –  9776 Hz
+  Band 33:  9776 – 10320 Hz
+  Band 34: 10320 – 10895 Hz
+  Band 35: 10895 – 11502 Hz
+  Band 36: 11502 – 12143 Hz
+  Band 37: 12143 – 12820 Hz
+  Band 38: 12820 – 13534 Hz
+  Band 39: 13534 – 14289 Hz
+  Band 40: 14289 – 15085 Hz
+  Band 41: 15085 – 15926 Hz
+  Band 42: 15926 – 16813 Hz
+  Band 43: 16813 – 17750 Hz
+  Band 44: 17750 – 18739 Hz
+  Band 45: 18739 – 19784 Hz
+  Band 46: 19784 – 20886 Hz
+  Band 47: 20886 – 22050 Hz
 ```
 
-Exact MDCT bin ranges are derived from the band Hz boundaries:
-`bin = round(freq_hz × N / sample_rate)`
+L2 band boundaries are derived from the formula:
+
+```
+b[k] = round(6000 × (22050 / 6000)^(k / 24))   for k = 0, 1, ..., 24
+```
+
+Band 24+k spans b[k] to b[k+1]. The inter-band ratio is (22050/6000)^(1/24) ≈ 1.0557.
+
+Exact MDCT bin ranges are derived from the band Hz boundaries using truncation (not rounding):
+
+```
+bin_lo[b] = max(0,        int(lo_hz × N / sample_rate))
+bin_hi[b] = min(MDCT_M−1, max(int(hi_hz × N / sample_rate), bin_lo[b] + 1))
+```
+
+The `max(..., bin_lo[b] + 1)` ensures every band contains at least one MDCT coefficient.
 
 ### 3.2 Perceptual weights
 
@@ -387,10 +404,49 @@ Implemented via linear resampling. For real-time DJ use, SoundTouch (LGPL) is re
 
 ## 9. Entropy Coding
 
-Static Huffman tables per band group. Symbol: quantized integer magnitude.
-Zero-valued coefficients are run-length coded. Sign bit stored separately.
+### 9.1 Codebook
 
-Huffman table derivation: Laplacian distribution with parameter estimated from the perceptual band energy. See reference implementation (`dsa_huffman.py`) for the static table definition.
+One static Huffman codebook shared across all layers and bands. The codebook is fixed at encode and decode time and is not transmitted in the bitstream.
+
+**Symbol set (34 symbols):**
+
+```
+0 – 31   coefficient magnitude, coded directly
+32       SYM_ESC — magnitude ≥ 32; followed by 12-bit unsigned literal
+33       SYM_EOB — end-of-band; all remaining coefficients in this band are zero
+```
+
+**Sign bit:** one bit immediately following each nonzero magnitude symbol. `0` = positive, `1` = negative. Not emitted for zero magnitudes.
+
+**End-of-band:** after the last nonzero coefficient in a band, emit `SYM_EOB`. Coefficients after `EOB` are implicitly zero. All-zero bands emit no symbols (zero-length Huffman payload).
+
+**Escape:** for |q| ≥ 32, emit `SYM_ESC` followed by a 12-bit unsigned integer encoding the exact magnitude. Maximum storable magnitude = 2^12 − 1 = 4095. Encoder MUST clip quantized values to this range before entropy coding.
+
+**Bit order:** MSB-first. The Huffman bitstream is padded to a byte boundary with zero bits at the end.
+
+### 9.2 Codebook derivation
+
+```
+LAMBDA = 0.4
+
+P(k) = exp(−LAMBDA × k)    for k = 0, 1, ..., 31
+P(SYM_ESC) = exp(−LAMBDA × 32) / (1 − exp(−LAMBDA))   (geometric tail)
+P(SYM_EOB) = exp(−LAMBDA × 4)                          (empirical weight)
+```
+
+Probabilities are normalized to sum to 1, then a standard Huffman tree is built by minimum-probability merging. The resulting code for magnitude 0 is ≤ 3 bits; `SYM_ESC` is ≥ 8 bits.
+
+### 9.3 Band wire format
+
+Each band within a layer block is serialized as:
+
+```
+[step:     float32 LE]     quantization step (raw IEEE 754 float, 4 bytes)
+[huff_n:   uint16 LE]      byte count of Huffman payload (0 = all-zero band)
+[huff_data: huff_n bytes]  MSB-first Huffman bitstream, byte-padded
+```
+
+`huff_n = 0` indicates an all-zero band — no `huff_data` bytes follow.
 
 ---
 
@@ -401,12 +457,14 @@ Huffman table derivation: Laplacian distribution with parameter estimated from t
 ```
 DSA1 File
 ├── Header              (32 bytes)
-├── Frame index         (4 bytes × n_frames)
-├── Layer 0 block       (Huffman-coded K/B-frame data, L0 bands)
-├── Layer 1 block       (L1 bands)
-├── Layer 2 block       (L2 bands)
-└── CRC32               (4 bytes, covers all preceding bytes)
+├── Frame index         (6 bytes × n_frames)
+├── Layer 0 block       (per-frame: [size:u16][Huffman layer data])
+├── Layer 1 block       (same structure)
+├── Layer 2 block       (same structure)
+└── CRC32               (4 bytes)
 ```
+
+Layer blocks are read sequentially. Each frame's entry in a layer block begins with a 2-byte `uint16 LE` size field giving the byte count of that frame's Huffman layer data. `size = 0` for S-frames (no data follows). This allows an L0-only reader to seek to `layer0_offset` and read only that block, ignoring L1 and L2 entirely.
 
 ### 10.2 Header (32 bytes)
 
@@ -415,13 +473,15 @@ DSA1 File
 | 0 | 4 | Magic | `0x44 0x53 0x41 0x31` ("DSA1") |
 | 4 | 1 | Version | `0x01` |
 | 5 | 1 | Mode | `0x01` = discrete, `0x02` = gradient |
-| 6 | 2 | Reserved | `0x00 0x00` |
-| 8 | 4 | Sample rate | uint32 LE (e.g. 44100) |
-| 12 | 4 | Frame count | uint32 LE |
-| 16 | 4 | Nominal bitrate | uint32 LE (kbps) |
-| 20 | 4 | L0 block offset | uint32 LE (bytes from file start) |
-| 24 | 4 | L1 block offset | uint32 LE |
-| 28 | 4 | L2 block offset | uint32 LE |
+| 6 | 4 | Sample rate | uint32 LE (e.g. 44100) |
+| 10 | 4 | Frame count | uint32 LE |
+| 14 | 2 | Nominal bitrate | uint16 LE (kbps) |
+| 16 | 4 | L0 block offset | uint32 LE (bytes from file start) |
+| 20 | 4 | L1 block offset | uint32 LE |
+| 24 | 4 | L2 block offset | uint32 LE |
+| 28 | 4 | CRC32 offset | uint32 LE (bytes from file start) |
+
+The L0 block offset equals `32 + 6 × n_frames` (header + frame index). A reader SHOULD verify this against the header field. The CRC32 offset equals the start of the 4-byte CRC32 checksum at the end of the file.
 
 ### 10.3 Mode byte values
 
@@ -433,41 +493,55 @@ DSA1 File
 
 ### 10.4 Frame index
 
-One 4-byte uint32 LE per frame. Value = byte offset of the frame's data within its layer block.
+One entry per frame, 6 bytes each, stored consecutively immediately after the header (at file offset 32):
+
+```
+[frame_type: uint8]    0x00 = K-frame, 0x01 = B-frame, 0x02 = S-frame
+[gop_pos:    uint8]    position within GOP (0 = K, 1–7 = B)
+[frame_idx:  uint32 LE]  frame sequence number (0-based, monotonically increasing)
+```
+
+The frame index describes frame metadata only. Layer data is stored in the layer blocks and accessed sequentially using per-frame `[size:u16]` prefix entries — there is no random-access offset table for layer positions.
 
 ### 10.5 Frame record layout
 
-**K-frame:**
+Frame metadata is stored in the frame index (§10.4). Layer data for each frame is stored in the layer blocks as a variable-length record prefixed by a 2-byte size field:
+
 ```
-[frame_type: 2 bits = 0b00]
-[gop_pos:    4 bits = 0]
-[reserved:   2 bits]
-[per-layer data blocks, one per included layer]
-  [band_count: 1 byte]
-  [step_exp:   1 byte per band (quantization step exponent)]
-  [huffman:    variable-length Huffman-coded coefficients]
+Layer block entry (per frame, per layer):
+  [size:      uint16 LE]      byte count of the Huffman layer data below
+  [layer data: size bytes]    band records (see §9.3), one per band in the layer
+
+  For S-frames:  size = 0, no layer data follows.
 ```
 
-**B-frame:**
+**K-frame layer data** — one band record per band (see §9.3 for wire format):
 ```
-[frame_type: 2 bits = 0b01]
-[gop_pos:    4 bits = 1–7]
-[reserved:   2 bits]
-[k0_ref:     2 bytes = frame index of preceding K-frame]
-[per-layer residual data blocks]
+For each band b in the layer:
+  [step:    float32 LE]    quantization step for band b
+  [huff_n:  uint16 LE]     Huffman payload byte count (0 = all-zero band)
+  [huff_data: huff_n bytes] Huffman-coded magnitudes, EOB, signs (§9.1)
 ```
 
-**S-frame:**
+**B-frame layer data** — identical structure to K-frame, but the Huffman payload encodes quantized *residuals* relative to the linear interpolation between the surrounding K-frames:
+
 ```
-[frame_type: 2 bits = 0b10]
-[gop_pos:    4 bits]
-[reserved:   2 bits]
-(no data — all coefficients implicitly zero)
+residual[k] = actual_coeffs[k] − interp[k]
+interp[k]   = (1 − α) × K0_coeffs[k] + α × K1_coeffs[k]
+α           = gop_pos / GOP_SIZE
 ```
+
+The surrounding K-frames are identified by:
+- `k0`: the K-frame at `frame_idx − gop_pos` (preceding K-frame boundary)
+- `k1`: the K-frame at `frame_idx − gop_pos + GOP_SIZE`
+
+k1 is implicit — not stored in the bitstream. A conforming encoder MUST ensure k1 always exists by emitting a K-frame at the final frame position if the last GOP is incomplete. A decoder where `k1_frame_idx ≥ frame_count` SHOULD apply K-frame loss recovery (§6.4) rather than producing corrupted output.
+
+**S-frame** — no layer data in any block. The frame index entry `frame_type = 0x02` is the complete record. All coefficients are implicitly zero.
 
 ### 10.6 CRC32
 
-CRC32 (ISO 3309 polynomial) of all bytes from file offset 0 through the end of the L2 block. Stored as 4-byte little-endian uint32 at the end of the file.
+CRC32 (ISO 3309 polynomial, same as `zlib.crc32`) of all bytes from file offset 0 through the end of the L2 block. Stored as 4-byte little-endian uint32 immediately after the L2 block. The header's `crc32_offset` field (offset 28) gives the absolute file position of this checksum. A conforming decoder MUST verify the CRC32 before decoding.
 
 ---
 
