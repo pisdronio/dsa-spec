@@ -36,18 +36,39 @@ def parse_args():
     return p.parse_args()
 
 # ── Color palette ─────────────────────────────────────────────────────────────
+#
+# Must match PALETTE_RGB in dsa_color.py (single source of truth).
+# Canonical values: sRGB (IEC 61966-2-1), D65 white point.
+# 'M' maps to DSA 'purple' — NOT printer magenta.  The printer's
+# RGB→CMYK conversion is handled by the driver; what matters is that
+# the same canonical RGB values are used here AND in the encoder.
+# For direct ink control, use the _rgb_to_cmyk_pct() helper below.
 
 COLOR_NAMES = ['R', 'G', 'B', 'C', 'M', 'Y', 'K', 'W']
 COLORS = {
-    'R': (255,   0,   0),
-    'G': (  0, 200,   0),   # slightly darker green for contrast against W
-    'B': (  0,   0, 255),
-    'C': (  0, 200, 255),
-    'M': (255,   0, 200),
-    'Y': (255, 220,   0),
-    'K': (  0,   0,   0),
-    'W': (255, 255, 255),
+    'R': (220,  50,  50),   # PALETTE_RGB['red']
+    'G': ( 50, 180,  50),   # PALETTE_RGB['green']
+    'B': ( 50,  50, 220),   # PALETTE_RGB['blue']
+    'C': (  0, 210, 210),   # PALETTE_RGB['cyan']
+    'M': (160,  50, 200),   # PALETTE_RGB['purple']
+    'Y': (240, 220,   0),   # PALETTE_RGB['yellow']
+    'K': (  0,   0,   0),   # PALETTE_RGB['black']
+    'W': (255, 255, 255),   # PALETTE_RGB['white']
 }
+
+def _rgb_to_cmyk_pct(r: int, g: int, b: int) -> tuple:
+    """Standard K-extraction RGB→CMYK.  Returns (C, M, Y, K) percentages 0–100.
+    Multiply by 2.55 for PIL CMYK mode (0–255 per channel)."""
+    c, m, y = 1 - r / 255.0, 1 - g / 255.0, 1 - b / 255.0
+    k = min(c, m, y)
+    if k < 1.0:
+        s = 1.0 - k
+        c, m, y = (c - k) / s, (m - k) / s, (y - k) / s
+    else:
+        c = m = y = 0.0
+    return (round(c * 100), round(m * 100), round(y * 100), round(k * 100))
+
+COLORS_CMYK = {name: _rgb_to_cmyk_pct(*rgb) for name, rgb in COLORS.items()}
 
 # Zone 4 pairs (ordered)
 Z4_PAIRS = [

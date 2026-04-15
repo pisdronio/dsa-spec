@@ -1345,6 +1345,26 @@ The following questions can only be answered by physical experimentation with th
 Run `python3 calib_disc_gen.py` to produce `calib_disc.png`, `calib_disc_legend.txt`,
 and `calib_measurements_template.csv`. **Pending: physical print on reference substrate.**
 
+**Color canon (critical):** `calib_disc_gen.py` now uses the same canonical `PALETTE_RGB`
+values as the reference encoder (`dsa_color.py`). The 8-symbol→RGB mapping is:
+
+| Symbol | DSA name | sRGB (canonical) | CMYK% (K-extracted) |
+|--------|----------|-----------------|---------------------|
+| R      | red      | (220,  50,  50) | C0 M77 Y77 K14      |
+| G      | green    | ( 50, 180,  50) | C72 M0 Y72 K29      |
+| B      | blue     | ( 50,  50, 220) | C77 M77 Y0 K14      |
+| C      | cyan     | (  0, 210, 210) | C100 M0 Y0 K18      |
+| M      | purple   | (160,  50, 200) | C20 M75 Y0 K22      |
+| Y      | yellow   | (240, 220,   0) | C0 M8 Y100 K6       |
+| K      | black    | (  0,   0,   0) | C0 M0 Y0 K100       |
+| W      | white    | (255, 255, 255) | C0 M0 Y0 K0         |
+
+The `_rgb_to_cmyk_pct()` helper (K-extraction: c=1−r/255, k=min(c,m,y), then
+normalise by 1−k) is available in both `calib_disc_gen.py` and `dsa_color.py`.
+The printer driver performs the final RGB→ink conversion; what matters for
+calibration consistency is that disc generator and encoder share identical
+source RGB values. **'M' is DSA purple (160,50,200), not printer magenta.**
+
 **Phase 2 — Static measurements** ⏳ HARDWARE PENDING
 Photograph stopped disc. Run `python3 calib_extract.py photo.jpg --speed 0`.
 Verify Zone 5 anchor readings match expected solid colors. Document dot gain.
