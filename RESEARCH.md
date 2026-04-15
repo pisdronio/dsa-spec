@@ -505,23 +505,23 @@ The exact capacity improvement depends on the gradient encoding scheme and is ou
 
 | Codec | Bitrate | Metric | Status |
 |---|---|---|---|
-| Opus | 6kbps | SNR | ✓ complete — see Section 11 |
-| Opus | 12kbps | SNR | ✓ complete — see Section 11 |
-| Opus | 32kbps | SNR | ✓ complete — see Section 11 |
-| Opus | 96kbps | SNR | ✓ complete — see Section 11 |
+| Opus | 6kbps | SNR | ✓ complete — see Section 12 |
+| Opus | 12kbps | SNR | ✓ complete — see Section 12 |
+| Opus | 32kbps | SNR | ✓ complete — see Section 12 |
+| Opus | 96kbps | SNR | ✓ complete — see Section 12 |
 | Opus | 6–12kbps | PEAQ | pending — requires ITU-R BS.1387 toolchain |
 | Codec2 | 3.2kbps | SNR | pending |
-| DSA | 6–96kbps | SNR | ✓ complete — see Section 11 |
+| DSA | 6–96kbps | SNR | ✓ complete — see Section 12 |
 
-**Summary (April 2026):** DSA meets or exceeds Opus at 6–12 kbps on tonal and wideband signals. Opus leads at 32+ kbps. Full analysis in Section 11.
+**Summary (April 2026):** DSA meets or exceeds Opus at 6–12 kbps on tonal and wideband signals. Opus leads at 32+ kbps. Full analysis in Section 12.
 
 ### 6.3 Degradation testing
 
 | Test | Status |
 |---|---|
-| Partial layer decode (L0 only, L0+L1, full) | ✓ complete — Section 11.5 |
-| Confidence-weighted reconstruction (α = 0.1–1.0) | ✓ complete — Section 11.5 |
-| Reverse decode temporal energy reversal | ✓ complete — Section 11.5 |
+| Partial layer decode (L0 only, L0+L1, full) | ✓ complete — Section 12.5 |
+| Confidence-weighted reconstruction (α = 0.1–1.0) | ✓ complete — Section 12.5 |
+| Reverse decode temporal energy reversal | ✓ complete — Section 12.5 |
 | Corrupted frame recovery (K-frame loss, τ decay) | ✓ implemented, informal test only |
 | Variable-rate decode (0.5×, 2×, 4× speed) | ✓ implemented, formal measurement pending |
 
@@ -625,9 +625,9 @@ This section records key design decisions and the reasoning behind them.
 
 13. Perceptual Audio Coder error concealment survey — ITU-T G.191 Software Tools Library, reference implementation of frame loss concealment strategies.
 
-14. Campbell, F.W., Robson, J.G. (1968). "Application of Fourier analysis to the visibility of gratings." *Journal of Physiology*, 197(3), 551–566. — Original measurement of the human Contrast Sensitivity Function (CSF); the visual perceptual weighting function proposed for DVA (Section 10.3) is derived from these measurements.
+14. Campbell, F.W., Robson, J.G. (1968). "Application of Fourier analysis to the visibility of gratings." *Journal of Physiology*, 197(3), 551–566. — Original measurement of the human Contrast Sensitivity Function (CSF); the visual perceptual weighting function proposed for DVA (Section 11.3) is derived from these measurements.
 
-15. Duda, J. (2013). "Asymmetric numeral systems: entropy coding combining speed of Huffman coding with compression rate of arithmetic coding." *arXiv:1311.2540*. — Theoretical foundation for ANS entropy coding; the patent-free alternative to Huffman proposed in Section 10.5.
+15. Duda, J. (2013). "Asymmetric numeral systems: entropy coding combining speed of Huffman coding with compression rate of arithmetic coding." *arXiv:1311.2540*. — Theoretical foundation for ANS entropy coding; the patent-free alternative to Huffman proposed in Section 11.5.
 
 16. Alliance for Open Media (2018). "AV1 Bitstream & Decoding Process Specification." https://aomedia.org/av1/ — AV1 uses ANS (specifically rANS) as its entropy coder; confirms patent-free status and provides a production reference implementation.
 
@@ -645,9 +645,9 @@ The project draws on three decades of open audio codec research, particularly th
 
 ---
 
-## 12. Visual-Audio Interface — The Gradient Encoding Layer
+## 10. Visual-Audio Interface — The Gradient Encoding Layer
 
-### 12.1 Overview
+### 10.1 Overview
 
 The DSA bitstream bytes are not simply mapped to color pairs. The visual encoding layer translates DSA coefficient data into physical gradient properties on the disc. The gradient IS the data — not decoration.
 
@@ -661,7 +661,7 @@ band confidence        →  gradient blur amount (Mode 2 only)
 
 This mapping makes the disc a direct visual representation of the music's spectral content. A musically dense passage — many large coefficients across all bands — produces a visually rich, colorfully active disc surface. A quiet passage produces sparse, near-solid regions. The disc is a score you can see.
 
-### 12.2 Color pair assignment per layer
+### 10.2 Color pair assignment per layer
 
 Each DSA layer uses color pairs chosen for maximum visual discriminability under its expected reading conditions:
 
@@ -683,7 +683,7 @@ Full 8-color palette available.
 
 Requires Digilog Rig with controlled LED lighting and fixed focal distance. Smaller dots, higher density, maximum data capacity. Color accuracy at this precision requires controlled illumination — ambient light introduces enough color shift to corrupt high-frequency coefficient reads.
 
-### 12.3 Gradient steepness ↔ coefficient magnitude
+### 10.3 Gradient steepness ↔ coefficient magnitude
 
 ```
 Large coefficient   →  near-hard edge
@@ -706,7 +706,7 @@ This means the disc is visually denser and more colorful in musically active sec
 
 **The disc is a visual map of the music's energy.** An audiophile looking at a Digilog disc under magnification can identify verse, chorus, drop, and silence by the density and sharpness of the gradient patterns — without scanning it.
 
-### 12.4 CRT bloom pre-emphasis model
+### 10.4 CRT bloom pre-emphasis model
 
 The Digilog Rig uses a fixed LED ring at controlled distance. The camera lens introduces a known, consistent optical blur — predictable, not noise. At fixed focal length and aperture, the point spread function of the lens is a measurable constant.
 
@@ -724,7 +724,7 @@ under standard rig LED lighting at 15cm focal distance.
 
 Layer 0 and Layer 1 dots are large enough that the lens PSF is negligible relative to dot size. Pre-emphasis applies primarily to Layer 2 (high-frequency, small, outer ring dots).
 
-### 12.5 Mode 1 vs Mode 2 visual encoding
+### 10.5 Mode 1 vs Mode 2 visual encoding
 
 **Mode 1 (discrete):**
 
@@ -741,7 +741,7 @@ In motion: the blur averages the gradient → lower confidence, lower precision,
 
 **The audio bitstream is IDENTICAL in Mode 1 and Mode 2.** Only the visual decoder changes. No breaking format change. Mode 2 support is a decoder feature flag in the file header, not a new codec version.
 
-### 12.6 Analog degradation chain
+### 10.6 Analog degradation chain
 
 The full chain from physical damage to acoustic output:
 
@@ -776,7 +776,7 @@ This chain — from physical surface condition to acoustic character — is the 
 
 The two sides of this interface are defined in section 2.3. The visual decoder outputs α[b] ∈ [0.0, 1.0]. The audio decoder applies it as `C̃[k] = q[k] × step[b] × α[b]`. The acoustic result at every point in the degradation table above is music — not silence, not glitch, not digital failure.
 
-### 12.7 Variable rate playback — real-time pitch control
+### 10.7 Variable rate playback — real-time pitch control
 
 Rotation speed is measured in real time by the rig camera watching clock track dots pass the read window. This measurement IS the tempo — not encoded in the disc, derived from physics.
 
@@ -801,7 +801,6 @@ Recommended libraries:
 
 ---
 
-## 7. Design Decisions Log (continued)
 
 ### 2026-04 — Layer-specific color pairs for discriminability under conditions
 
@@ -854,9 +853,9 @@ The saturation floor (peak_coeff / MAX_QUANT per band) prevents coefficient clip
 
 ---
 
-## 10. Open Problems and Future Work
+## 11. Open Problems and Future Work
 
-### 10.1 Radial motion blur compensation
+### 11.1 Radial motion blur compensation
 
 At a given RPM, tangential velocity increases with radius:
 v = 2π × r × RPM/60
@@ -877,9 +876,9 @@ speeds, L2 degrades first and fastest — which is actually
 perceptually correct (highs roll off before mids before bass)
 but should be explicitly modeled rather than incidentally correct.
 
-### 10.2 Optical pipeline simulation for encoder optimization
+### 11.2 Optical pipeline simulation for encoder optimization
 
-Current pre-emphasis (Section 12.4) uses a static factor (1.15×)
+Current pre-emphasis (Section 10.4) uses a static factor (1.15×)
 estimated for the reference rig. A simulation-based optimizer
 would model the full optical pipeline:
 - Gaussian blur (lens PSF at fixed focal length)
@@ -892,7 +891,7 @@ maximize decoded confidence after simulated degradation. This
 would replace the static pre-emphasis estimate with a
 calibrated, testable model.
 
-### 10.3 DVA: Digilog Visual Architecture
+### 11.3 DVA: Digilog Visual Architecture
 
 DVA is a research direction for a video codec derived from DSA using the same layered physical-media principles.
 
@@ -904,7 +903,7 @@ DVA is a research direction for a video codec derived from DSA using the same la
 
 **Status:** Conceptual. Requires: (a) definition of the 3D transform, (b) CSF-based perceptual quantizer, (c) visual analogue of the DSA1 bitstream format. No implementation timeline.
 
-### 10.4 Per-layer adaptive Huffman tables
+### 11.4 Per-layer adaptive Huffman tables
 
 DSA currently uses a single shared Huffman table for all quantized coefficients. Each layer (L0, L1, L2) has systematically different coefficient distributions:
 
@@ -918,7 +917,7 @@ A per-layer Huffman table trained on representative audio would reduce average c
 
 **Interaction with Mode 2:** Mode 2 continuous steepness values are currently stored as 32-bit floats. Per-layer adaptive Huffman applies only to the quantized integer coefficients, not the steepness floats. The two features are independent.
 
-### 10.5 ANS entropy coding
+### 11.5 ANS entropy coding
 
 The current Huffman coder (dsa_huffman.py) achieves near-optimal compression for fixed symbol probabilities but cannot adapt within a frame. Asymmetric Numeral Systems (ANS, Duda 2013 [15]) is a modern entropy coding technique used in Zstandard, AV1, and LZFSE.
 
@@ -932,7 +931,7 @@ The current Huffman coder (dsa_huffman.py) achieves near-optimal compression for
 
 **Implementation complexity:** Higher than Huffman — requires tANS (table ANS) construction, encoder/decoder state machine, and careful integration with the layered bitstream. Recommended as a Phase 2 entropy coder after the reference implementation is stable.
 
-### 10.6 Strobe-synchronized reading
+### 11.6 Strobe-synchronized reading
 
 The DSA disc currently encodes audio in a single visual channel read by a camera under ambient or continuous illumination. A strobe-synchronized reading system would enable two independent information channels from the same physical surface.
 
@@ -951,7 +950,7 @@ The DSA disc currently encodes audio in a single visual channel read by a camera
 
 ---
 
-## 11. Benchmark Results — DSA vs Opus
+## 12. Benchmark Results — DSA vs Opus
 
 **Date:** April 2026
 **DSA version:** reference implementation (dsa_bench.py)
@@ -961,7 +960,7 @@ The DSA disc currently encodes audio in a single visual channel read by a camera
 
 ---
 
-### 11.1 Test signals
+### 10.1 Test signals
 
 | Signal | Description | Frequency content |
 |--------|-------------|-------------------|
@@ -974,7 +973,7 @@ The DSA disc currently encodes audio in a single visual channel read by a camera
 
 ---
 
-### 11.2 Round-trip SNR (dB)
+### 10.2 Round-trip SNR (dB)
 
 Higher is better. Positive values mean the codec reconstructed more signal than it lost.
 
@@ -997,7 +996,7 @@ Chirp (100→20kHz)       +1.8   -0.1    +4.3   +0.6   +12.0  +11.2   +19.0  +23
 
 ---
 
-### 11.3 Analysis: where DSA wins and where it does not
+### 10.3 Analysis: where DSA wins and where it does not
 
 **DSA advantages:**
 
@@ -1023,7 +1022,7 @@ Opus beats DSA by 8–11 dB at 1 kHz. 1 kHz sits at the L0/L1 layer boundary; th
 
 ---
 
-### 11.4 Speed comparison
+### 10.4 Speed comparison
 
 Measured at 12 kbps on a 5-second signal, all times in × real-time (higher = faster).
 
@@ -1047,7 +1046,7 @@ DSA decode is 7–12× real-time in Python, which is already sufficient for real
 
 ---
 
-### 11.5 DSA-unique properties (not measurable by SNR)
+### 10.5 DSA-unique properties (not measurable by SNR)
 
 These properties have no Opus equivalent and cannot be evaluated by round-trip SNR. Measured at 12 kbps on the three-tone signal (440 Hz + 2 kHz + 9 kHz).
 
@@ -1098,7 +1097,7 @@ The ramp signal (loud first half, silent second half) correctly flips temporal e
 
 ---
 
-### 11.6 Known limitations and future work
+### 10.6 Known limitations and future work
 
 **SNR plateau fixed (April 2026).** The original quantizer only scaled steps upward (quality reduction). A bidirectional rate-distortion scaler was added: Phase 2 scales steps downward when surplus budget exists, using binary search with a MAX_QUANT saturation floor. Result: tonal signals at 96 kbps improved from ~26 dB to 56–59 dB, overtaking Opus. See design decisions log.
 
@@ -1584,7 +1583,7 @@ This section records research directions that extend beyond DSA audio into adjac
 
 ### 14.2 Video extension path
 
-**Concept:** DVA — Digilog Visual Architecture — a video codec using DSA's layered physical-media framework extended to spatial-temporal video data. Full conceptual description in Section 10.3.
+**Concept:** DVA — Digilog Visual Architecture — a video codec using DSA's layered physical-media framework extended to spatial-temporal video data. Full conceptual description in Section 11.3.
 
 **Format extension:** A DVA disc would use concentric ring zones for spatial frequency layers, analogous to DSA audio layers:
 - Inner rings: coarse spatial structure (DC + low spatial frequency) — always readable
@@ -1593,21 +1592,21 @@ This section records research directions that extend beyond DSA audio into adjac
 
 **Frame rate coupling:** Disc rotation speed determines temporal resolution, analogous to how DSA rotation speed determines temporal playback rate. Slower rotation = lower frame rate but higher spatial fidelity per frame (longer exposure integration time). This is the inverse of the DSA audio relationship (slower rotation = slower playback) — in DVA, slower rotation trades temporal for spatial resolution.
 
-**Compression kernel:** The 3D spatial-temporal transform with CSF-based perceptual quantization described in Section 10.3. The DSA1 bitstream format would be extended with a DVA1 variant carrying 2D coefficient blocks per frame instead of 1D spectral coefficients.
+**Compression kernel:** The 3D spatial-temporal transform with CSF-based perceptual quantization described in Section 11.3. The DSA1 bitstream format would be extended with a DVA1 variant carrying 2D coefficient blocks per frame instead of 1D spectral coefficients.
 
 **Status:** No implementation planned until DSA audio v1 is externally validated. DVA is a 3–5 year research horizon.
 
 ### 14.3 Better-than-Opus compression
 
-**Concept:** DSA's current benchmark position (Section 11) shows that DSA beats Opus at 6–12 kbps on tonal signals and at 96 kbps after the bidirectional scaler fix. The 32 kbps tonal gap (Opus leads by 5–17 dB) and the broadband gap (Opus leads on chirp and white noise at all bitrates) indicate that DSA's quantizer is leaving efficiency on the table.
+**Concept:** DSA's current benchmark position (Section 12) shows that DSA beats Opus at 6–12 kbps on tonal signals and at 96 kbps after the bidirectional scaler fix. The 32 kbps tonal gap (Opus leads by 5–17 dB) and the broadband gap (Opus leads on chirp and white noise at all bitrates) indicate that DSA's quantizer is leaving efficiency on the table.
 
 **Path to closing the gap:**
 
 **(a) Psychoacoustic model refinement:** The current ATH + Bark masking model (Section 3) uses simplified ISO 226 equal-loudness contours with fixed frequency weights. A full implementation would incorporate simultaneous masking (tonal masker suppresses nearby noise), temporal masking (pre- and post-masking windows), and inter-channel masking for stereo. These are standard in AAC and Opus and account for approximately 3–6 dB improvement at mid bitrates.
 
-**(b) ANS entropy coding (Section 10.5):** 10–15% compression improvement across all bitrates without changing the quantizer. At 32 kbps this recovers 3.2–4.8 kbps, which at current SNR curves corresponds to approximately 2–4 dB.
+**(b) ANS entropy coding (Section 11.5):** 10–15% compression improvement across all bitrates without changing the quantizer. At 32 kbps this recovers 3.2–4.8 kbps, which at current SNR curves corresponds to approximately 2–4 dB.
 
-**(c) Per-layer adaptive Huffman (Section 10.4) as an intermediate step:** 8–15% improvement at low implementation cost, recoverable within the current Huffman architecture.
+**(c) Per-layer adaptive Huffman (Section 11.4) as an intermediate step:** 8–15% improvement at low implementation cost, recoverable within the current Huffman architecture.
 
 **(d) Joint stereo encoding:** DSA currently encodes channels independently. Mid/Side (M/S) stereo encoding, standard since MP3, reduces inter-channel redundancy. For stereo signals, M/S typically saves 20–35% of the bitrate allocated to the Side channel, which can be redirected to the Mid channel for improved center-image fidelity.
 
@@ -1623,7 +1622,7 @@ This section records research directions that extend beyond DSA audio into adjac
 
 ### 15.1 The current color model is mathematically defined, not perceptually optimized
 
-The DSA v1 color pair assignments (Section 12.2) were selected by human judgment and functional criteria: high-contrast pairs for L0 (Black↔White, Black↔Yellow, Black↔Cyan), complementary pairs for L1 (Red↔Cyan, Blue↔Yellow, Green↔Purple), and full palette for L2. These choices are reasonable but not derived from a perceptual color model.
+The DSA v1 color pair assignments (Section 10.2) were selected by human judgment and functional criteria: high-contrast pairs for L0 (Black↔White, Black↔Yellow, Black↔Cyan), complementary pairs for L1 (Red↔Cyan, Blue↔Yellow, Green↔Purple), and full palette for L2. These choices are reasonable but not derived from a perceptual color model.
 
 **The core problem:** two colors with a large RGB Euclidean distance are not necessarily the most perceptually distinct pair to the human eye or a camera sensor under real lighting conditions. RGB space is a device model, not a perceptual model. Empirical observation of the current disc renderer output confirms this: the strip visualization appears low-contrast and visually crude even under controlled conditions, and will degrade further under real-world lighting (ambient color shifts, print ink variation, camera auto-white-balance).
 
@@ -1685,7 +1684,7 @@ Different decay constants per channel model the known differential latency of L,
 
 ### 15.5 The disc as a visual score — perceptual design intent
 
-Section 12.3 of this document states: "The disc is a visual map of the music's energy. An audiophile looking at a Digilog disc under magnification can identify verse, chorus, drop, and silence by the density and sharpness of the gradient patterns."
+Section 10.3 of this document states: "The disc is a visual map of the music's energy. An audiophile looking at a Digilog disc under magnification can identify verse, chorus, drop, and silence by the density and sharpness of the gradient patterns."
 
 This intent requires that the disc be visually readable by humans, not just cameras. The current v1 color model is designed for camera readability. A v2 color model should satisfy both constraints simultaneously:
 
